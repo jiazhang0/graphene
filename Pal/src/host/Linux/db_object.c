@@ -72,8 +72,10 @@ static int _DkObjectWaitOne(PAL_HANDLE handle, int64_t timeout) {
                 else if (events && !(HANDLE_HDR(handle)->flags & ERROR(i))) {
                     // We should be able to at least return that this handle
                     // is writeable, if anyone cares.  We only need to return
-                    // one, so it is ok to set the last one.
-                    timeout = 0;
+                    // one, so it is ok to set the last one.  If there isn't a timeout
+                    // set, drop it to zero
+                    if (timeout == NO_TIMEOUT)
+                        timeout = 0;
                     // DEP 2/5/19: This works out because the next `if` statement
                     // will populate this field.  This function really needs a
                     // major overhaul for clarity
@@ -219,8 +221,10 @@ int _DkObjectsWaitAny(int count, PAL_HANDLE* handleArray, int64_t timeout, PAL_H
                          hdl->generic.fds[j] != PAL_IDX_POISON) {
                     // We should be able to at least return that this handle
                     // is writeable, if anyone cares.  We only need to return
-                    // one, so it is ok to set the last one.
-                    timeout = 0;
+                    // one, so it is ok to set the last one. If there isn't a
+                    // timeout set, drop it to zero
+                    if (timeout == NO_TIMEOUT)
+                        timeout = 0;
                     // DEP 2/5/19: This works out because the next if statement
                     // will popuate this field.  This function really needs a
                     // major overhaul for clarity
