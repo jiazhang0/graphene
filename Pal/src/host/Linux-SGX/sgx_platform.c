@@ -221,6 +221,14 @@ int contact_intel_attest_service(const char* subkey, const sgx_quote_nonce_t* no
         goto failed;
 
     if (!pid) {
+	SGX_DBG(DBG_D, "Initializing attestation evidence request ...\n");
+	SGX_DBG(DBG_D, "  HTTP resource: %s\n", IAS_REPORT_URL);
+	SGX_DBG(DBG_D, "  HTTP method: POST\n");
+	SGX_DBG(DBG_D, "  Request headers:\n");
+	SGX_DBG(DBG_D, "    Content-Type: application/json\n");
+	SGX_DBG(DBG_D, "    %s\n", subscription_header);
+	SGX_DBG(DBG_D, "  Request body: %s\n", https_request);
+
         INLINE_SYSCALL(dup2, 2, pipefds[0], 0);
         extern char** environ;
         INLINE_SYSCALL(execve, 3, https_client_args[0], https_client_args, environ);
@@ -246,7 +254,7 @@ int contact_intel_attest_service(const char* subkey, const sgx_quote_nonce_t* no
     https_output_len = INLINE_SYSCALL(lseek, 3, output_fd, 0, SEEK_END);
     if (IS_ERR(https_output_len) || !https_output_len)
         goto failed;
-    https_output = (char*)INLINE_SYSCALL(mmap, 6, NULL, ALLOC_ALIGNUP(https_output_len),
+    https_output = (char*)INLINE_SYSCALL(mmap, 6, NULL, ALLOC_ALIGNUP(https_output_len + 1),
                                          PROT_READ, MAP_PRIVATE|MAP_FILE, output_fd, 0);
     if (IS_ERR_P(https_output))
         goto failed;
@@ -264,6 +272,10 @@ int contact_intel_attest_service(const char* subkey, const sgx_quote_nonce_t* no
                                          PROT_READ, MAP_PRIVATE|MAP_FILE, header_fd, 0);
     if (IS_ERR_P(https_header))
         goto failed;
+
+    SGX_DBG(DBG_D, "Retrieving attestation evidence response ...\n");
+    SGX_DBG(DBG_D, "  Response headers:\n%s\n", https_header);
+    SGX_DBG(DBG_D, "  Response body: %s\n", https_output);
 
     // Parse the HTTPS headers
     size_t   ias_sig_len     = 0;
