@@ -19,6 +19,9 @@ net.allow_bind.1 = 127.0.0.1:8000
 # allow to connect to port 8000
 net.allow_peer.1 = 127.0.0.1:8000
 
+sgx.ra_client_spid = 66DB3914B9FB79AC7FF2B3B0F2C5118F
+sgx.ra_client_key = 510647a662f2498697fa532411b104a8
+sgx.ra_accept_group_out_of_date = 1
 # sgx-related
 sgx.trusted_files.ld = file:$(LIBCDIR)/ld-linux-x86-64.so.2
 sgx.trusted_files.libc = file:$(LIBCDIR)/libc.so.6

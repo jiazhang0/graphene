@@ -2,6 +2,7 @@
 #include "ecall_types.h"
 #include "sgx_internal.h"
 #include "sgx_enclave.h"
+#include "sgx_agent.h"
 #include "pal_security.h"
 #include "pal_linux_error.h"
 
@@ -607,11 +608,36 @@ static int sgx_ocall_load_debug(void * pms)
     return 0;
 }
 
-static int sgx_ocall_get_attestation(void* pms) {
+static int sgx_ocall_get_attestation(void* pms)
+{
     ms_ocall_get_attestation_t * ms = (ms_ocall_get_attestation_t *) pms;
     ODEBUG(OCALL_GET_ATTESTATION, ms);
     return retrieve_verified_quote(&ms->ms_spid, ms->ms_subkey, ms->ms_linkable, &ms->ms_report,
                                    &ms->ms_nonce, &ms->ms_attestation);
+}
+
+static int sgx_ocall_get_quote(void* pms)
+{
+    ms_ocall_get_quote_t * ms = (ms_ocall_get_quote_t *) pms;
+    ODEBUG(OCALL_GET_QUOTE, ms);
+    return retrieve_platform_quote(&ms->ms_spid, ms->ms_linkable, &ms->ms_report, &ms->ms_nonce,
+                                   &ms->ms_quote, &ms->ms_quote_len, &ms->ms_qe_report);
+}
+
+static int sgx_ocall_agent_request(void* pms)
+{
+    ms_ocall_agent_request_t * ms = (ms_ocall_agent_request_t *) pms;
+    ODEBUG(OCALL_AGENT_REQUEST, NULL);
+
+    return retrieve_agent_request(&ms->ms_type, &ms->ms_payload, &ms->ms_payload_len);
+}
+
+static int sgx_ocall_agent_response(void* pms)
+{
+    ms_ocall_agent_response_t * ms = (ms_ocall_agent_response_t *) pms;
+    ODEBUG(OCALL_AGENT_RESPONSE, NULL);
+
+    return respond_agent_request(ms->ms_status, ms->ms_payload, ms->ms_payload_len);
 }
 
 sgx_ocall_fn_t ocall_table[OCALL_NR] = {
@@ -652,6 +678,9 @@ sgx_ocall_fn_t ocall_table[OCALL_NR] = {
         [OCALL_LOAD_DEBUG]       = sgx_ocall_load_debug,
         [OCALL_GET_ATTESTATION]  = sgx_ocall_get_attestation,
         [OCALL_EVENTFD]          = sgx_ocall_eventfd,
+        [OCALL_GET_QUOTE]        = sgx_ocall_get_quote,
+        [OCALL_AGENT_REQUEST]    = sgx_ocall_agent_request,
+        [OCALL_AGENT_RESPONSE]   = sgx_ocall_agent_response,
     };
 
 #define EDEBUG(code, ms) do {} while (0)

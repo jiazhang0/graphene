@@ -157,11 +157,16 @@ extern struct pal_enclave_state {
     sgx_sign_data_t enclave_data;       // Reserved for signing other data
 } __attribute__((packed)) pal_enclave_state;
 
+int sgx_get_report(sgx_target_info_t* target_info, sgx_sign_data_t* data,
+                   sgx_report_t* report);
+
 /*
  * sgx_verify_report: verify a CPU-signed report from another local enclave
  * @report: the buffer storing the report to verify
  */
 int sgx_verify_report(sgx_report_t* report);
+
+void sgx_print_report(sgx_report_t* r);
 
 typedef int (*check_mr_enclave_t)(PAL_HANDLE, sgx_measurement_t*, struct pal_enclave_state*);
 

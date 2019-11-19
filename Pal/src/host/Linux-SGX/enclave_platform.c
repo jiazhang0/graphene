@@ -25,6 +25,40 @@
 
 #include "quote/generated-cacert.h"
 
+static int get_spid(sgx_spid_t spid) {
+    char spid_hex[sizeof(sgx_spid_t) * 2 + 1];
+
+    ssize_t len = get_config(pal_state.root_config, "sgx.ra_client_spid", spid_hex,
+                             sizeof(spid_hex));
+    if (len <= 0) {
+        SGX_DBG(DBG_E, "*** No client info specified in the manifest. "
+                "Graphene will not perform remote attestation ***\n");
+        return -PAL_ERROR_NOTSUPPORT;
+    }
+
+    if (len != sizeof(sgx_spid_t) * 2) {
+        SGX_DBG(DBG_E, "Malformed sgx.ra_client_spid value in the manifest: %s\n", spid_hex);
+        return -PAL_ERROR_INVAL;
+    }
+
+    for (ssize_t i = 0; i < len; i++) {
+        int8_t val = hex2dec(spid_hex[i]);
+        if (val < 0) {
+            SGX_DBG(DBG_E, "Malformed sgx.ra_client_spid value in the manifest: %s\n", spid_hex);
+            return -PAL_ERROR_INVAL;
+        }
+        spid[i/2] = spid[i/2] * 16 + (uint8_t)val;
+    }
+
+    return 0;
+}
+
+static bool get_linkable(void) {
+    char buf[2];
+    int len = get_config(pal_state.root_config, "sgx.ra_client_linkable", buf, sizeof(buf));
+    return (len == 1 && buf[0] == '1');
+}
+
 /*
  * Graphene's simple remote attestation feature:
  *
@@ -116,46 +150,28 @@
  * the manifest file.
  */
 int init_trusted_platform(void) {
-    char spid_hex[sizeof(sgx_spid_t) * 2 + 1];
-    ssize_t len = get_config(pal_state.root_config, "sgx.ra_client_spid", spid_hex,
-                             sizeof(spid_hex));
-    if (len <= 0) {
-        SGX_DBG(DBG_E, "*** No client info specified in the manifest. "
-                "Graphene will not perform remote attestation ***\n");
-        return 0;
-    }
-
-    if (len != sizeof(sgx_spid_t) * 2) {
-        SGX_DBG(DBG_E, "Malformed sgx.ra_client_spid value in the manifest: %s\n", spid_hex);
-        return -PAL_ERROR_INVAL;
-    }
-
     sgx_spid_t spid;
-    for (ssize_t i = 0; i < len; i++) {
-        int8_t val = hex2dec(spid_hex[i]);
-        if (val < 0) {
-            SGX_DBG(DBG_E, "Malformed sgx.ra_client_spid value in the manifest: %s\n", spid_hex);
-            return -PAL_ERROR_INVAL;
-        }
-        spid[i/2] = spid[i/2] * 16 + (uint8_t)val;
-    }
+    int ret = get_spid(spid);
+    if (ret == -PAL_ERROR_NOTSUPPORT)
+        return 0;
+    else if (ret)
+        return ret;
 
     char subkey[CONFIG_MAX];
-    len = get_config(pal_state.root_config, "sgx.ra_client_key", subkey, sizeof(subkey));
+    int len = get_config(pal_state.root_config, "sgx.ra_client_key", subkey, sizeof(subkey));
     if (len <= 0) {
         SGX_DBG(DBG_E, "No sgx.ra_client_key in the manifest\n");
         return -PAL_ERROR_INVAL;
     }
 
-    char buf[2];
-    len = get_config(pal_state.root_config, "sgx.ra_client_linkable", buf, sizeof(buf));
-    bool linkable = (len == 1 && buf[0] == '1');
+    bool linkable = get_linkable();
 
+    char buf[2];
     len = get_config(pal_state.root_config, "sgx.ra_accept_group_out_of_date", buf, sizeof(buf));
     bool accept_group_out_of_date = (len == 1 && buf[0] == '1');
 
     sgx_quote_nonce_t nonce;
-    int ret = _DkRandomBitsRead(&nonce, sizeof(nonce));
+    ret = _DkRandomBitsRead(&nonce, sizeof(nonce));
     if (ret < 0)
         return ret;
 
@@ -648,4 +664,30 @@ free_attestation:
 failed:
     ret = -PAL_ERROR_DENIED;
     goto free_attestation;
+}
+
+int sgx_get_quote(const sgx_quote_nonce_t* nonce, sgx_quote_t** ret_quote, size_t* ret_quote_len,
+                  sgx_report_t* ret_qe_report) {
+    sgx_spid_t spid;
+    int ret = get_spid(spid);
+    if (ret == -PAL_ERROR_NOTSUPPORT)
+        return 0;
+    else if (ret)
+        return ret;
+
+    __sgx_mem_aligned sgx_report_t report;
+    __sgx_mem_aligned sgx_target_info_t targetinfo = pal_sec.aesm_targetinfo;
+    ret = sgx_report(&targetinfo, (sgx_report_data_t*)&pal_enclave_state, &report);
+    if (ret) {
+        SGX_DBG(DBG_E, "Failed to get report for attestation\n");
+        return -PAL_ERROR_DENIED;
+    }
+
+    ret = ocall_get_quote(&spid, get_linkable(), &report, nonce, ret_quote, ret_quote_len, ret_qe_report);
+    if (ret < 0) {
+        SGX_DBG(DBG_E, "Failed to get quote\n");
+        return ret;
+    }
+
+    return ret;
 }

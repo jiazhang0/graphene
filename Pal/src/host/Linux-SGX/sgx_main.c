@@ -6,6 +6,7 @@
 #include "sgx_internal.h"
 #include "sgx_tls.h"
 #include "sgx_enclave.h"
+#include "sgx_agent.h"
 #include "debugger/sgx_gdb.h"
 
 #include <asm/fcntl.h>
@@ -13,6 +14,7 @@
 #include <linux/fs.h>
 #include <linux/in.h>
 #include <linux/in6.h>
+#include <linux/un.h>
 #include <asm/errno.h>
 #include <ctype.h>
 
@@ -937,6 +939,12 @@ static int load_enclave (struct pal_enclave * enclave,
     ret = init_aesm_targetinfo(&pal_sec->aesm_targetinfo);
     if (ret < 0)
         return ret;
+
+    ret = init_graphene_agent();
+    if (ret < 0) {
+        SGX_DBG(DBG_E, "Unable to initialize agent\n");	
+	return ret;
+    }
 
     void* alt_stack = (void*)INLINE_SYSCALL(mmap, 6, NULL, ALT_STACK_SIZE,
                                             PROT_READ | PROT_WRITE,

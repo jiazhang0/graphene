@@ -402,25 +402,10 @@ failed:
     goto done;
 }
 
-/*
- * This wrapper function performs the whole attestation procedure outside the enclave (except
- * retrieving the local remote attestation and verification). The function first contacts
- * the AESM service to retrieve a quote of the platform and the report of the quoting enclave.
- * Then, the function submits the quote to the IAS through a HTTPS client (CURL) to exchange
- * for a remote attestation report signed by a Intel-approved certificate chain. Finally, the
- * function returns the QE report, the quote, and the response from the IAS back to the enclave
- * for verification.
- *
- * @spid:        The client SPID registered with IAS.
- * @subkey:      SPID subscription key.
- * @linkable:    A boolean that represents whether the SPID is linkable.
- * @report:      The local report of the target enclave.
- * @nonce:       A 16-byte nonce randomly generated inside the enclave.
- * @attestation: A structure for storing the response from the AESM service and the IAS.
- */
-int retrieve_verified_quote(const sgx_spid_t* spid, const char* subkey, bool linkable,
+int retrieve_platform_quote(const sgx_spid_t* spid, bool linkable,
                             const sgx_report_t* report, const sgx_quote_nonce_t* nonce,
-                            sgx_attestation_t* attestation) {
+                            sgx_quote_t** ret_quote, size_t* ret_quote_len,
+                            sgx_report_t* ret_qe_report) {
 
     int ret = connect_aesm_service();
     if (ret < 0)
@@ -446,6 +431,7 @@ int retrieve_verified_quote(const sgx_spid_t* spid, const char* subkey, bool lin
     if (ret < 0)
         return ret;
 
+    ret = -PAL_ERROR_DENIED;
     if (!res->getquoteres) {
         SGX_DBG(DBG_E, "aesm_service returned wrong message\n");
         goto failed;
@@ -472,20 +458,51 @@ int retrieve_verified_quote(const sgx_spid_t* spid, const char* subkey, bool lin
     }
 
     memcpy(quote, r->quote.data, r->quote.len);
-    attestation->quote = quote;
-    attestation->quote_len = r->quote.len;
+    *ret_quote = quote;
+    *ret_quote_len = r->quote.len;
 
-    ret = contact_intel_attest_service(subkey, nonce, (sgx_quote_t *) quote, attestation);
-    if (ret < 0) {
-        INLINE_SYSCALL(munmap, 2, quote, ALLOC_ALIGNUP(r->quote.len));
-        goto failed;
-    }
+    if (ret_qe_report)
+        memcpy(ret_qe_report, r->qe_report.data, sizeof(*ret_qe_report));
 
-    memcpy(&attestation->qe_report, r->qe_report.data, sizeof(sgx_report_t));
-    response__free_unpacked(res, NULL);
-    return 0;
+    ret = 0;
 
 failed:
     response__free_unpacked(res, NULL);
+    return ret;
+}
+
+/*
+ * This wrapper function performs the whole attestation procedure outside the enclave (except
+ * retrieving the local remote attestation and verification). The function first contacts
+ * the AESM service to retrieve a quote of the platform and the report of the quoting enclave.
+ * Then, the function submits the quote to the IAS through a HTTPS client (CURL) to exchange
+ * for a remote attestation report signed by a Intel-approved certificate chain. Finally, the
+ * function returns the QE report, the quote, and the response from the IAS back to the enclave
+ * for verification.
+ *
+ * @spid:        The client SPID registered with IAS.
+ * @subkey:      SPID subscription key.
+ * @linkable:    A boolean that represents whether the SPID is linkable.
+ * @report:      The local report of the target enclave.
+ * @nonce:       A 16-byte nonce randomly generated inside the enclave.
+ * @attestation: A structure for storing the response from the AESM service and the IAS.
+ */
+int retrieve_verified_quote(const sgx_spid_t* spid, const char* subkey, bool linkable,
+                            const sgx_report_t* report, const sgx_quote_nonce_t* nonce,
+                            sgx_attestation_t* attestation) {
+
+    int ret = retrieve_platform_quote(spid, linkable, report, nonce, &attestation->quote,
+                                      &attestation->quote_len, &attestation->qe_report);
+    if (ret < 0)
+        return ret;
+
+    ret = contact_intel_attest_service(subkey, nonce, attestation->quote, attestation);
+    if (ret < 0)
+        goto failed;
+
+    return 0;
+
+failed:
+    INLINE_SYSCALL(munmap, 2, attestation->quote, ALLOC_ALIGNUP(attestation->quote_len));
     return -PAL_ERROR_DENIED;
 }

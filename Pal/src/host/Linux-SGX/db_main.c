@@ -398,6 +398,11 @@ void pal_linux_main(char * uptr_args, uint64_t args_size,
         ocall_exit(rv, true);
     }
 
+    if ((rv = init_agent_thread()) < 0) {
+	SGX_DBG(DBG_E, "Failed to create agent thread: %d\n", rv);
+	ocall_exit(rv, true);
+    }
+
     if ((rv = init_trusted_files()) < 0) {
         SGX_DBG(DBG_E, "Failed to load the checksums of trusted files: %d\n", rv);
         ocall_exit(rv, true);

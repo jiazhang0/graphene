@@ -90,7 +90,7 @@ uint64_t sgx_copy_to_enclave(const void* ptr, uint64_t maxsize, const void* uptr
     return usize;
 }
 
-static void print_report(sgx_report_t* r) {
+void sgx_print_report(sgx_report_t* r) {
     SGX_DBG(DBG_S, "  cpu_svn:     %s\n",     ALLOCA_BYTES2HEXSTR(r->body.cpu_svn.svn));
     SGX_DBG(DBG_S, "  mr_enclave:  %s\n",     ALLOCA_BYTES2HEXSTR(r->body.mr_enclave.m));
     SGX_DBG(DBG_S, "  mr_signer:   %s\n",     ALLOCA_BYTES2HEXSTR(r->body.mr_signer.m));
@@ -113,11 +113,12 @@ static sgx_key_128bit_t enclave_key;
  * @data:         the data to be included and signed in the report
  * @report:       a buffer for storing the report
  */
-static int sgx_get_report(sgx_target_info_t* target_info, sgx_sign_data_t* data,
-                          sgx_report_t* report) {
+int sgx_get_report(sgx_target_info_t* target_info, sgx_sign_data_t* data,
+                   sgx_report_t* report) {
     __sgx_mem_aligned struct pal_enclave_state state;
     memcpy(&state, &pal_enclave_state, sizeof(state));
-    memcpy(&state.enclave_data, data, sizeof(*data));
+    if (data)
+        memcpy(&state.enclave_data, data, sizeof(*data));
 
     int ret = sgx_report(target_info, &state, report);
     if (ret) {
@@ -125,7 +126,7 @@ static int sgx_get_report(sgx_target_info_t* target_info, sgx_sign_data_t* data,
         return -PAL_ERROR_DENIED;
     }
 
-    print_report(report);
+    sgx_print_report(report);
     return 0;
 }
 
@@ -161,7 +162,7 @@ int sgx_verify_report (sgx_report_t* report)
     memset(&report_key, 0, sizeof(report_key));
 
     SGX_DBG(DBG_S, "Verify report:\n");
-    print_report(report);
+    sgx_print_report(report);
     SGX_DBG(DBG_S, "  verify:     %s\n", ALLOCA_BYTES2HEXSTR(check_mac));
 
     if (memcmp(&check_mac, &report->mac, sizeof(check_mac))) {

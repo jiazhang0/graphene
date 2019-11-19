@@ -1159,3 +1159,111 @@ int ocall_eventfd (unsigned int initval, int flags)
     sgx_reset_ustack();
     return retval;
 }
+
+int ocall_get_quote (const sgx_spid_t* spid, bool linkable, const sgx_report_t* report,
+                     const sgx_quote_nonce_t* nonce, sgx_quote_t** ret_quote, size_t* ret_quote_len,
+                     sgx_report_t* ret_qe_report)
+{
+    ms_ocall_get_quote_t * ms;
+
+    ms = sgx_alloc_on_ustack(sizeof(*ms));
+    if (!ms) {
+        sgx_reset_ustack();
+        return -EPERM;
+    }
+
+    memcpy(&ms->ms_spid, spid, sizeof(ms->ms_spid));
+    memcpy(&ms->ms_report, report, sizeof(ms->ms_report));
+    memcpy(&ms->ms_nonce, nonce, sizeof(ms->ms_nonce));
+    ms->ms_linkable = linkable;
+ 
+    int retval = sgx_ocall(OCALL_GET_QUOTE, ms);
+    if (retval >= 0) {
+	sgx_quote_t* quote = (sgx_quote_t*)malloc(ms->ms_quote_len);
+        if (quote) {
+            if (!sgx_copy_to_enclave(quote, ms->ms_quote_len, ms->ms_quote, ms->ms_quote_len))
+                retval = -EACCES;
+            else {
+                memcpy(ret_qe_report, &ms->ms_qe_report, sizeof(*ret_qe_report));
+                *ret_quote = quote;
+                *ret_quote_len = ms->ms_quote_len;
+            }
+        } else
+            retval = -ENOMEM;
+
+        ocall_munmap_untrusted(ms->ms_quote, ALLOC_ALIGNUP(ms->ms_quote_len));
+    }
+
+    sgx_reset_ustack();
+    return retval;
+}
+
+int ocall_acknowledge_agent_response (struct sgx_agent_response* res, size_t plen)
+{
+    ms_ocall_agent_response_t *ms;
+
+    ms = sgx_alloc_on_ustack(sizeof(*ms) + plen);
+    if (!ms) {
+        sgx_reset_ustack();
+        return -EPERM;
+    }
+
+    ms->ms_status = res->status;
+    ms->ms_payload_len = plen;
+
+    void *p = ms->ms_payload;
+    for (size_t i = 0; i < res->pvec_nr; ++i) {
+        memcpy(p, res->pvec[i].p, res->pvec[i].plen);
+        p += res->pvec[i].plen;
+    }
+
+    int retval = sgx_ocall(OCALL_AGENT_RESPONSE, ms);
+
+    sgx_reset_ustack();
+    return retval;
+}
+
+int ocall_retrieve_agent_request (struct sgx_agent_request* req)
+{
+    ms_ocall_agent_request_t *ms;
+
+    ms = sgx_alloc_on_ustack(sizeof(*ms));
+    if (!ms)
+        return -EPERM;
+
+    int retval = sgx_ocall(OCALL_AGENT_REQUEST, ms);
+    if (retval < 0) {
+        sgx_reset_ustack();
+        return -EACCES;
+    }
+
+    uint32_t plen = ms->ms_payload_len;
+    if (plen > sizeof(req->payload)) {
+        retval = AGENT_RES_STAT_INVALID_PAYLOAD;
+        goto out;
+    }
+
+    if (!sgx_copy_to_enclave(&req->payload, plen, ms->ms_payload, plen)) {
+        retval = AGENT_RES_STAT_INVALID_PAYLOAD;
+        goto out;
+    }
+
+    uint32_t type = ms->ms_type;
+    if (type >= AGENT_REQ_TYPE_MAX) {
+        retval = AGENT_RES_STAT_INVALID_REQUEST_TYPE;
+        goto out;
+    }
+
+    req->type = type;
+
+out:
+    sgx_reset_ustack();
+    if (!retval)
+        return 0;
+
+    pal_printf("ocall_retrieve_agent_request: %d\n", retval);
+
+    struct sgx_agent_response res;
+    res.status = retval;
+    return ocall_acknowledge_agent_response(&res, 0);
+}

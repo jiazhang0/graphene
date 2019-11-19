@@ -3,6 +3,7 @@
  */
 
 #include "pal_linux.h"
+#include "sgx_agent.h"
 
 #include <asm/stat.h>
 #include <linux/socket.h>
@@ -96,5 +97,12 @@ int ocall_load_debug (const char * command);
 int ocall_get_attestation(const sgx_spid_t* spid, const char* subkey, bool linkable,
                           const sgx_report_t* report, const sgx_quote_nonce_t* nonce,
                           sgx_attestation_t* attestation);
+
 int ocall_eventfd (unsigned int initval, int flags);
 
+int ocall_get_quote (const sgx_spid_t* spid, bool linkable, const sgx_report_t* report,
+                     const sgx_quote_nonce_t* nonce, sgx_quote_t** ret_quote, size_t* ret_quote_len,
+                     sgx_report_t* ret_qe_report);
+
+int ocall_retrieve_agent_request (struct sgx_agent_request* req);
+int ocall_acknowledge_agent_response (struct sgx_agent_response* res, size_t plen);

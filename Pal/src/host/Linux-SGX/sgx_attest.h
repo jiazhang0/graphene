@@ -70,6 +70,9 @@ int sgx_verify_platform(sgx_spid_t* spid, const char* subkey, sgx_quote_nonce_t*
                         bool accept_group_out_of_date, sgx_attestation_t* ret_attestation,
                         char** ret_ias_status, char** ret_ias_timestamp);
 
+int sgx_get_quote(const sgx_quote_nonce_t* nonce, sgx_quote_t** ret_quote, size_t* ret_quote_len,
+                  sgx_report_t* ret_qe_report);
+
 #define HTTPS_REQUEST_MAX_LENGTH   (256)
 
 #endif /* SGX_ATTEST_H */
